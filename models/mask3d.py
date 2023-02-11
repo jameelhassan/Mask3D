@@ -180,6 +180,9 @@ class Mask3D(nn.Module):
 
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
+        self.query2clip = nn.Linear(self.mask_dim, 512)
+
+
     def get_pos_encs(self, coords):
         pos_encodings_pcd = []
 
@@ -198,9 +201,9 @@ class Mask3D(nn.Module):
         return pos_encodings_pcd
 
     def forward(self, x, point2segment=None, raw_coordinates=None, is_eval=False):
-        pcd_features, aux = self.backbone(x)
+        pcd_features, aux = self.backbone(x) # (N, 3) -> (N, 256|256|128|96|96); pcd_feats is aux[-1]
 
-        batch_size = len(x.decomposed_coordinates)
+        batch_size = len(x.decomposed_coordinates) # decomposed coords are for the batch separately
 
         with torch.no_grad():
             coordinates = me.SparseTensor(features=raw_coordinates,
@@ -215,10 +218,10 @@ class Mask3D(nn.Module):
             coords.reverse()
 
         pos_encodings_pcd = self.get_pos_encs(coords)
-        mask_features = self.mask_features_head(pcd_features)
+        mask_features = self.mask_features_head(pcd_features) # (N, 96) -> (N,128)
 
         if self.train_on_segments:
-            mask_segments = []
+            mask_segments = []  # Some pooling ??
             for i, mask_feature in enumerate(mask_features.decomposed_features):
                 mask_segments.append(self.scatter_fn(mask_feature, point2segment[i], dim=0))
 
@@ -227,10 +230,10 @@ class Mask3D(nn.Module):
         if self.non_parametric_queries:
             fps_idx = [furthest_point_sample(x.decomposed_coordinates[i][None, ...].float(),
                                              self.num_queries).squeeze(0).long()
-                       for i in range(len(x.decomposed_coordinates))]
+                       for i in range(len(x.decomposed_coordinates))]   # (Batch, num_queries), each query gets some ID. what ID??
 
             sampled_coords = torch.stack([coordinates.decomposed_features[i][fps_idx[i].long(), :]
-                                          for i in range(len(fps_idx))])
+                                          for i in range(len(fps_idx))])    # Above IDs are used to extract the coordinates
 
             mins = torch.stack([coordinates.decomposed_features[i].min(dim=0)[0] for i in range(len(coordinates.decomposed_features))])
             maxs = torch.stack([coordinates.decomposed_features[i].max(dim=0)[0] for i in range(len(coordinates.decomposed_features))])
@@ -268,7 +271,7 @@ class Mask3D(nn.Module):
         predictions_class = []
         predictions_mask = []
 
-        for decoder_counter in range(self.num_decoders):
+        for decoder_counter in range(self.num_decoders):    # Number of refinement stages??
             if self.shared_decoder:
                 decoder_counter = 0
             for i, hlevel in enumerate(self.hlevels):
@@ -288,7 +291,7 @@ class Mask3D(nn.Module):
                                                           ret_attn_mask=True,
                                                           point2segment=None,
                                                           coords=coords)
-
+                ## Mask module done
                 decomposed_aux = aux[hlevel].decomposed_features
                 decomposed_attn = attn_mask.decomposed_features
 
@@ -367,7 +370,7 @@ class Mask3D(nn.Module):
                     query_pos=query_pos
                 )
 
-                # FFN
+                # FFN (B, 100, 128)
                 queries = self.ffn_attention[decoder_counter][i](
                     output
                 ).permute((1, 0, 2))
@@ -394,9 +397,13 @@ class Mask3D(nn.Module):
         predictions_class.append(output_class)
         predictions_mask.append(outputs_mask)
 
+        # Return projected queries
+        proj_queries = self.query2clip(queries)
+
         return {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
+            'proj_queries': proj_queries,
             'aux_outputs': self._set_aux_loss(
                 predictions_class, predictions_mask
             ),
@@ -407,16 +414,16 @@ class Mask3D(nn.Module):
     def mask_module(self, query_feat, mask_features, mask_segments, num_pooling_steps, ret_attn_mask=True,
                                  point2segment=None, coords=None):
         query_feat = self.decoder_norm(query_feat)
-        mask_embed = self.mask_embed_head(query_feat)
-        outputs_class = self.class_embed_head(query_feat)
+        mask_embed = self.mask_embed_head(query_feat)   # 2 layer MLP: Instance features
+        outputs_class = self.class_embed_head(query_feat)   # Linear projection to NUM_CLASSES: Class preds
 
         output_masks = []
 
         if point2segment is not None:
             output_segments = []
             for i in range(len(mask_segments)):
-                output_segments.append(mask_segments[i] @ mask_embed[i].T)
-                output_masks.append(output_segments[-1][point2segment[i]])
+                output_segments.append(mask_segments[i] @ mask_embed[i].T)  # Segment-instance feature similarity (for mask/heatmap)
+                output_masks.append(output_segments[-1][point2segment[i]])  # Map all points from segments
         else:
             for i in range(mask_features.C[-1, 0] + 1):
                 output_masks.append(mask_features.decomposed_features[i] @ mask_embed[i].T)
@@ -429,11 +436,11 @@ class Mask3D(nn.Module):
         if ret_attn_mask:
             attn_mask = outputs_mask
             for _ in range(num_pooling_steps):
-                attn_mask = self.pooling(attn_mask.float())
+                attn_mask = self.pooling(attn_mask.float()) # Pooling down output masks. Point features from high res, so need to pool down mask to attend to point features at low res level point features
 
             attn_mask = me.SparseTensor(features=(attn_mask.F.detach().sigmoid() < 0.5),
                                         coordinate_manager=attn_mask.coordinate_manager,
-                                        coordinate_map_key=attn_mask.coordinate_map_key)
+                                        coordinate_map_key=attn_mask.coordinate_map_key)    # Why sigmoid < 0.5 ?? 
 
             if point2segment is not None:
                 return outputs_class, output_segments, attn_mask

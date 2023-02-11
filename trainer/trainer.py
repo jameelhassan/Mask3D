@@ -24,6 +24,8 @@ import random
 import colorsys
 from typing import List, Tuple
 import functools
+import json
+from clip import clip
 
 
 @functools.lru_cache(20)
@@ -94,7 +96,7 @@ class InstanceSegmentation(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        data, target, file_names = batch
+        data, target, file_names = batch    # target has labels(num_instances), masks(num_instances, num_points) & segment_masks(num_instances, num_segments)
 
         if data.features.shape[0] > self.config.general.max_batch_size:
             print("data exceeds threshold")
@@ -114,9 +116,24 @@ class InstanceSegmentation(pl.LightningModule):
                               device=self.device)
 
         try:
+            # point2segment assings a segment to each point. 
+            # Output has pred_logits(B, 100, Classes), pred_masks, aux_outputs, sampled_coords, backbone_feats
             output = self.forward(data,
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates)
+
+            # CLIP embeddings
+            dataset = self.config.data.train_dataset.dataset_name
+            self.classnames = json.load(open("classes.json", "r"))
+            self.classnames = self.classnames[dataset]
+            clip_model, clip_preprocess = clip.load("ViT-B/16", device=self.device)
+            with torch.no_grad():
+                text_tokens = clip.tokenize(["A photo of a " + classname for classname in self.classnames]).to(self.device)
+                text_features = clip_model.encode_text(text_tokens).float()
+                text_features /= text_features.norm(dim=-1, keepdim=True)
+            clip_embeddings = text_features
+            del text_features, clip_model
+
         except RuntimeError as run_err:
             print(run_err)
             if 'only a single point gives nans in cross-attention' == run_err.args[0]:
@@ -125,6 +142,7 @@ class InstanceSegmentation(pl.LightningModule):
                 raise run_err
 
         try:
+            # Get quesries as well
             losses = self.criterion(output, target, mask_type=self.mask_type)
         except ValueError as val_err:
             print(f"ValueError: {val_err}")

@@ -17,7 +17,7 @@ general:
   ignore_class_threshold: 100
   project_name: scannet200
   workspace: jonasschult
-  experiment_name: DEBUG_ABLATION
+  experiment_name: scannet200_benchmark
   num_targets: 201
   add_instance: true
   dbscan_eps: 0.95

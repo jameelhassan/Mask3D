@@ -1,0 +1,8 @@
+{
+    "scannet": [
+        "a photo of a {}, taken indoor"
+    ],
+    "scannet200": [
+        "a photo of a {}, taken indoor"
+    ]
+}

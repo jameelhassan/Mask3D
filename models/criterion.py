@@ -126,6 +126,22 @@ class SetCriterion(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
+    def loss_text(self, outputs, targets, indices, clip_embeddings):
+        '''
+        Contrastive loss using text embedding
+        '''
+        assert "pred_logits" in outputs
+        src_logits = outputs["pred_logits"].float()
+
+        idx = self._get_src_permutation_idx(indices)
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        target_classes = torch.full(
+            src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
+        )
+        target_classes[idx] = target_classes_o
+
+        
+
     def loss_labels(self, outputs, targets, indices, num_masks, mask_type):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
@@ -243,6 +259,8 @@ class SetCriterion(nn.Module):
             'labels': self.loss_labels,
             'masks': self.loss_masks
         }
+        # 'text': self.loss_text
+        # How to feed CLIP embeddings ??
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_masks, mask_type)
 
@@ -253,10 +271,11 @@ class SetCriterion(nn.Module):
              targets: list of dicts, such that len(targets) == batch_size.
                       The expected keys in each dict depends on the losses applied, see each loss' doc
         """
+        # Think how to handle the queries. Implement contrastive loss
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets, mask_type)
+        indices = self.matcher(outputs_without_aux, targets, mask_type) # Selected predictions, Selected targets
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
