@@ -111,7 +111,7 @@ class SetCriterion(nn.Module):
         self.matcher = matcher
         self.weight_dict = weight_dict
         self.eos_coef = eos_coef
-        self.losses = losses
+        self.losses = ['labels', 'masks', 'text'] # losses
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
 
@@ -126,7 +126,7 @@ class SetCriterion(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_text(self, outputs, targets, indices, clip_embeddings):
+    def loss_text(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings):
         '''
         Contrastive loss using text embedding
         '''
@@ -134,15 +134,19 @@ class SetCriterion(nn.Module):
         src_logits = outputs["pred_logits"].float()
 
         idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        target_classes = torch.full(
-            src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
-        )
-        target_classes[idx] = target_classes_o
+        queries = outputs['proj_queries']
+        queries = queries[idx]
+        query_logits = queries @ clip_embeddings.T
 
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+
+        # Implement contrastive loss
+        loss_txt = F.cross_entropy(query_logits, target_classes_o, ignore_index=253)
+        losses = {"loss_txt": loss_txt}
+        return losses
         
 
-    def loss_labels(self, outputs, targets, indices, num_masks, mask_type):
+    def loss_labels(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings=None):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -160,7 +164,7 @@ class SetCriterion(nn.Module):
         losses = {"loss_ce": loss_ce}
         return losses
 
-    def loss_masks(self, outputs, targets, indices, num_masks, mask_type):
+    def loss_masks(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings=None):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -254,17 +258,18 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_masks, mask_type):
+    def get_loss(self, loss, outputs, targets, indices, num_masks, mask_type, clip_embeddings):
         loss_map = {
             'labels': self.loss_labels,
-            'masks': self.loss_masks
+            'masks': self.loss_masks,
+            'text': self.loss_text
         }
         # 'text': self.loss_text
         # How to feed CLIP embeddings ??
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks, mask_type)
+        return loss_map[loss](outputs, targets, indices, num_masks, mask_type, clip_embeddings)
 
-    def forward(self, outputs, targets, mask_type):
+    def forward(self, outputs, targets, mask_type, clip_embeddings):
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -289,14 +294,17 @@ class SetCriterion(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, mask_type))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, mask_type, clip_embeddings))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
                 indices = self.matcher(aux_outputs, targets, mask_type)
                 for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, mask_type)
+                    # Lazy fix, do we want auxiliary outputs for text loss ??
+                    if loss == 'text':
+                        continue
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, mask_type, clip_embeddings)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

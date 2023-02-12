@@ -88,6 +88,24 @@ class InstanceSegmentation(pl.LightningModule):
         self.iou = IoU()
         # misc
         self.labels_info = dict()
+        self.init_clip_embeddings()
+
+    def init_clip_embeddings(self):
+        '''
+        Initialize CLIP embeddings for all classes
+        '''
+        dataset = self.config.data.train_dataset.dataset_name
+        self.classnames = json.load(open("classes.json", "r"))
+        self.classnames = self.classnames[dataset]
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        clip_model, clip_preprocess = clip.load("ViT-B/16", device=device)
+        with torch.no_grad():
+            text_tokens = clip.tokenize(["A photo of a " + classname for classname in self.classnames]).to(device)
+            text_features = clip_model.encode_text(text_tokens).float()
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+        clip_embeddings = text_features
+        del text_features, clip_model
+        self.clip_embeddings = clip_embeddings
 
     def forward(self, x, point2segment=None, raw_coordinates=None, is_eval=False):
         with self.optional_freeze():
@@ -122,18 +140,6 @@ class InstanceSegmentation(pl.LightningModule):
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates)
 
-            # CLIP embeddings
-            dataset = self.config.data.train_dataset.dataset_name
-            self.classnames = json.load(open("classes.json", "r"))
-            self.classnames = self.classnames[dataset]
-            clip_model, clip_preprocess = clip.load("ViT-B/16", device=self.device)
-            with torch.no_grad():
-                text_tokens = clip.tokenize(["A photo of a " + classname for classname in self.classnames]).to(self.device)
-                text_features = clip_model.encode_text(text_tokens).float()
-                text_features /= text_features.norm(dim=-1, keepdim=True)
-            clip_embeddings = text_features
-            del text_features, clip_model
-
         except RuntimeError as run_err:
             print(run_err)
             if 'only a single point gives nans in cross-attention' == run_err.args[0]:
@@ -142,8 +148,8 @@ class InstanceSegmentation(pl.LightningModule):
                 raise run_err
 
         try:
-            # Get quesries as well
-            losses = self.criterion(output, target, mask_type=self.mask_type)
+            # Get queries as well
+            losses = self.criterion(output, target, mask_type=self.mask_type, clip_embeddings=self.clip_embeddings)
         except ValueError as val_err:
             print(f"ValueError: {val_err}")
             print(f"data shape: {data.shape}")
@@ -380,7 +386,7 @@ class InstanceSegmentation(pl.LightningModule):
 
             try:
                 losses = self.criterion(output, target,
-                                        mask_type=self.mask_type)
+                                        mask_type=self.mask_type, clip_embeddings=self.clip_embeddings)
             except ValueError as val_err:
                 print(f"ValueError: {val_err}")
                 print(f"data shape: {data.shape}")

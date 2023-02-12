@@ -21,10 +21,8 @@
         "bathtub", 
         "otherfurniture"
     ],
-    "scannet200": [
-        "wall", 
-        "chair", 
-        "floor", 
+    "scannet200": [ 
+        "chair",  
         "table", 
         "door", 
         "couch", 
