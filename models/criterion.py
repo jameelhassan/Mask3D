@@ -136,7 +136,7 @@ class SetCriterion(nn.Module):
         idx = self._get_src_permutation_idx(indices)
         queries = outputs['proj_queries']
         queries = queries[idx]
-        query_logits = queries @ clip_embeddings.T
+        query_logits = 100 * queries @ clip_embeddings.T
 
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
 

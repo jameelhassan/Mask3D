@@ -1,8 +1,8 @@
 {
     "scannet": [
-        "a photo of a {}, taken indoor"
+        "a photo of a {}, an indoor scene"
     ],
     "scannet200": [
-        "a photo of a {}, taken indoor"
+        "a photo of a {}, an indoor scene"
     ]
 }
