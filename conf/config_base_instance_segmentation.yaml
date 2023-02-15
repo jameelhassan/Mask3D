@@ -15,9 +15,9 @@ general:
   export: false
   use_dbscan: false
   ignore_class_threshold: 100
-  project_name: scannet200
-  workspace: jonasschult
-  experiment_name: scannet200_benchmark
+  project_name: Mask3D_Scannet200
+  workspace: amine-jh
+  experiment_name: CLIP_contrast_base
   num_targets: 201
   add_instance: true
   dbscan_eps: 0.95
