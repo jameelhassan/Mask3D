@@ -7,8 +7,8 @@ CURR_QUERY=150
 
 # TRAIN
 python main_instance_segmentation.py \
-general.experiment_name="scannet200_val" \
-general.project_name="scannet200" \
+general.experiment_name="CLIP_contrast_init" \
+general.project_name="Mask3D_Scannet200" \
 data/datasets=scannet200 \
 general.num_targets=201 \
 data.num_labels=200 \
@@ -17,9 +17,9 @@ general.train_on_segments=true
 
 # TEST
 python main_instance_segmentation.py \
-general.experiment_name="scannet200_val_query_${CURR_QUERY}_topk_${CURR_TOPK}_dbscan_${CURR_DBSCAN}" \
-general.project_name="scannet200_eval" \
-general.checkpoint="checkpoints/scannet200/scannet200_val.ckpt" \
+general.experiment_name="CLIP_contrast_init_query_${CURR_QUERY}_topk_${CURR_TOPK}_dbscan_${CURR_DBSCAN}" \
+general.project_name="Mask3D_Scannet200_eval" \
+general.checkpoint="checkpoints/scannet200/CLIP_contrast_init.ckpt" \
 data/datasets=scannet200 \
 general.num_targets=201 \
 data.num_labels=200 \

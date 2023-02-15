@@ -4,7 +4,7 @@
 # but they might be overwritten
 
 # splits
-train_mode: train_validation # train
+train_mode: train # train_validation
 validation_mode: validation
 test_mode: validation # test  # validation
 

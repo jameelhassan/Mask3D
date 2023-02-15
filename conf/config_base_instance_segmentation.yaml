@@ -6,8 +6,8 @@ general:
   backbone_checkpoint: null
   freeze_backbone: false # train only last layer
   linear_probing_backbone: false
-  train_on_segments: true #false
-  eval_on_segments: true #false
+  train_on_segments: false
+  eval_on_segments: false
   filter_out_instances: false
   save_visualizations: false
   visualization_point_size: 20
@@ -17,7 +17,7 @@ general:
   ignore_class_threshold: 100
   project_name: Mask3D_Scannet200
   workspace: amine-jh
-  experiment_name: CLIP_contrast_base
+  experiment_name: CLIP
   num_targets: 201
   add_instance: true
   dbscan_eps: 0.95
