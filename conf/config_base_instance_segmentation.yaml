@@ -15,10 +15,10 @@ general:
   export: false
   use_dbscan: false
   ignore_class_threshold: 100
-  project_name: Mask3D_Scannet200
+  project_name: Mask3D_Scannet20
   workspace: amine-jh
   experiment_name: CLIP
-  num_targets: 201
+  num_targets: 19
   add_instance: true
   dbscan_eps: 0.95
   dbscan_min_points: 1

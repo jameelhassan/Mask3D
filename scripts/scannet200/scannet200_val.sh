@@ -16,17 +16,17 @@ general.eval_on_segments=true \
 general.train_on_segments=true
 
 # TEST
-python main_instance_segmentation.py \
-general.experiment_name="CLIP_contrast_init_query_${CURR_QUERY}_topk_${CURR_TOPK}_dbscan_${CURR_DBSCAN}" \
-general.project_name="Mask3D_Scannet200_eval" \
-general.checkpoint="checkpoints/scannet200/CLIP_contrast_init.ckpt" \
-data/datasets=scannet200 \
-general.num_targets=201 \
-data.num_labels=200 \
-general.eval_on_segments=true \
-general.train_on_segments=true \
-general.train_mode=false \
-model.num_queries=${CURR_QUERY} \
-general.topk_per_image=${CURR_TOPK} \
-general.use_dbscan=true \
-general.dbscan_eps=${CURR_DBSCAN}
+# python main_instance_segmentation.py \
+# general.experiment_name="CLIP_contrast_init_query_${CURR_QUERY}_topk_${CURR_TOPK}_dbscan_${CURR_DBSCAN}" \
+# general.project_name="Mask3D_Scannet200_eval" \
+# general.checkpoint="checkpoints/scannet200/CLIP_contrast_init.ckpt" \
+# data/datasets=scannet200 \
+# general.num_targets=201 \
+# data.num_labels=200 \
+# general.eval_on_segments=true \
+# general.train_on_segments=true \
+# general.train_mode=false \
+# model.num_queries=${CURR_QUERY} \
+# general.topk_per_image=${CURR_TOPK} \
+# general.use_dbscan=true \
+# general.dbscan_eps=${CURR_DBSCAN}
