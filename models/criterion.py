@@ -16,7 +16,7 @@ from detectron2.projects.point_rend.point_features import (
 )
 
 from models.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
-
+from pytorch_metric_learning import losses as lss
 
 def dice_loss(
         inputs: torch.Tensor,
@@ -94,7 +94,7 @@ class SetCriterion(nn.Module):
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
 
-    def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
+    def __init__(self, num_classes,cont_loss_temperature, matcher, weight_dict, eos_coef, losses,
                  num_points, oversample_ratio, importance_sample_ratio,
                  class_weights):
         """Create the criterion.
@@ -111,7 +111,7 @@ class SetCriterion(nn.Module):
         self.matcher = matcher
         self.weight_dict = weight_dict
         self.eos_coef = eos_coef
-        self.losses = ['labels', 'masks', 'text'] # losses
+        self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
 
@@ -120,33 +120,13 @@ class SetCriterion(nn.Module):
             empty_weight[:-1] = torch.tensor(self.class_weights)
 
         self.register_buffer("empty_weight", empty_weight)
-
+        self.temperature = cont_loss_temperature
         # pointwise mask loss parameters
         self.num_points = num_points
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_text(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings):
-        '''
-        Contrastive loss using text embedding
-        '''
-        assert "pred_logits" in outputs
-        src_logits = outputs["pred_logits"].float()
-
-        idx = self._get_src_permutation_idx(indices)
-        queries = outputs['proj_queries']
-        queries = queries[idx]
-        query_logits = 100 * queries @ clip_embeddings.T
-
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-
-        # Implement contrastive loss
-        loss_txt = F.cross_entropy(query_logits, target_classes_o, ignore_index=253)
-        losses = {"loss_txt": loss_txt}
-        return losses
-        
-
-    def loss_labels(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings=None):
+    def loss_labels(self, outputs, targets, indices, num_masks, mask_type):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -163,8 +143,40 @@ class SetCriterion(nn.Module):
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight, ignore_index=253)
         losses = {"loss_ce": loss_ce}
         return losses
+    
+    def contrastive_loss(self, queries, targets, indices):
+        """Classification loss (NLL)
+        targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
+        """
+        # assert "pred_logits" in outputs
+        # src_logits = outputs["pred_logits"].float()
 
-    def loss_masks(self, outputs, targets, indices, num_masks, mask_type, clip_embeddings=None):
+        # idx = self._get_src_permutation_idx(indices)
+        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        # target_classes = torch.full(
+        #     src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
+        # )
+        # target_classes[idx] = target_classes_o
+
+        # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight, ignore_index=253)
+        # losses = {"loss_ce": loss_ce}
+        losses_contr = []
+        for batch_id, (map_id, target_id) in enumerate(indices):
+            queries_b = queries[batch_id][map_id]
+            labels_b = targets[batch_id]['labels'][target_id]
+            queries_normalized = F.normalize(queries_b, p=2, dim=1)
+            logits = torch.div(
+                torch.matmul(
+                    queries_normalized, torch.transpose(queries_normalized, 0, 1)
+                ),
+                self.temperature,
+            )
+            losses_contr.append(lss.NTXentLoss(temperature=self.temperature)(logits, torch.squeeze(labels_b)))
+        return {
+        "cont_loss": torch.sum(torch.stack(losses_contr))
+        }
+
+    def loss_masks(self, outputs, targets, indices, num_masks, mask_type):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -258,29 +270,25 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_masks, mask_type, clip_embeddings):
+    def get_loss(self, loss, outputs, targets, indices, num_masks, mask_type):
         loss_map = {
             'labels': self.loss_labels,
             'masks': self.loss_masks,
-            'text': self.loss_text
         }
-        # 'text': self.loss_text
-        # How to feed CLIP embeddings ??
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks, mask_type, clip_embeddings)
+        return loss_map[loss](outputs, targets, indices, num_masks, mask_type)
 
-    def forward(self, outputs, targets, mask_type, clip_embeddings):
+    def forward(self, queries, outputs, targets, mask_type):
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
              targets: list of dicts, such that len(targets) == batch_size.
                       The expected keys in each dict depends on the losses applied, see each loss' doc
         """
-        # Think how to handle the queries. Implement contrastive loss
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets, mask_type) # Selected predictions, Selected targets
+        indices = self.matcher(outputs_without_aux, targets, mask_type)
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
@@ -294,17 +302,16 @@ class SetCriterion(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, mask_type, clip_embeddings))
-
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, mask_type))
+        
+        losses.update(self.contrastive_loss(queries, targets, indices))
+        
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
                 indices = self.matcher(aux_outputs, targets, mask_type)
                 for loss in self.losses:
-                    # Lazy fix, do we want auxiliary outputs for text loss ??
-                    if loss == 'text':
-                        continue
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, mask_type, clip_embeddings)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, mask_type)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

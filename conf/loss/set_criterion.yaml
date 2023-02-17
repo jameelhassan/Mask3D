@@ -1,6 +1,7 @@
 # @package _group_
 _target_: models.criterion.SetCriterion
 num_classes: ${general.num_targets}
+cont_loss_temperature: ${general.cont_loss_temperature}
 eos_coef: 0.1
 losses:
   - "labels"
@@ -9,3 +10,4 @@ num_points: ${matcher.num_points}
 oversample_ratio: 3.0
 importance_sample_ratio: 0.75
 class_weights: -1
+

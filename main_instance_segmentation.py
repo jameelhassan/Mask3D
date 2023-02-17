@@ -14,8 +14,6 @@ from utils.utils import (
     load_backbone_checkpoint_with_missing_or_exsessive_keys
 )
 from pytorch_lightning import Trainer, seed_everything
-import wandb
-
 
 def get_parameters(cfg: DictConfig):
     logger = logging.getLogger(__name__)
@@ -98,8 +96,8 @@ def main(cfg: DictConfig):
         train(cfg)
     else:
         test(cfg)
+        i=0
 
 
 if __name__ == "__main__":
-    # wandb.init(mode="disabled")
     main()

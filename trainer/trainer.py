@@ -25,8 +25,6 @@ import colorsys
 from typing import List, Tuple
 import functools
 import json
-from clip import clip
-
 
 @functools.lru_cache(20)
 def get_evenly_distributed_colors(count: int) -> List[Tuple[np.uint8, np.uint8, np.uint8]]:
@@ -58,6 +56,7 @@ class InstanceSegmentation(pl.LightningModule):
         self.save_hyperparameters()
         # model
         self.model = hydra.utils.instantiate(config.model)
+
         self.optional_freeze = nullcontext
         if config.general.freeze_backbone:
             self.optional_freeze = torch.no_grad
@@ -67,7 +66,8 @@ class InstanceSegmentation(pl.LightningModule):
         matcher = hydra.utils.instantiate(config.matcher)
         weight_dict = {"loss_ce": matcher.cost_class,
                        "loss_mask": matcher.cost_mask,
-                       "loss_dice": matcher.cost_dice}
+                       "loss_dice": matcher.cost_dice,
+                       "cont_loss": config.general.cont_loss}
 
         aux_weight_dict = {}
         for i in range(self.model.num_levels * self.model.num_decoders):
@@ -88,33 +88,15 @@ class InstanceSegmentation(pl.LightningModule):
         self.iou = IoU()
         # misc
         self.labels_info = dict()
-        self.init_clip_embeddings()
-
-    def init_clip_embeddings(self):
-        '''
-        Initialize CLIP embeddings for all classes
-        '''
-        dataset = self.config.data.train_dataset.dataset_name
-        self.classnames = json.load(open("classes.json", "r"))
-        self.classnames = self.classnames[dataset]
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        clip_model, clip_preprocess = clip.load("ViT-B/16", device=device)
-        with torch.no_grad():
-            text_tokens = clip.tokenize(["A photo of a " + classname for classname in self.classnames]).to(device)
-            text_features = clip_model.encode_text(text_tokens).float()
-            text_features /= text_features.norm(dim=-1, keepdim=True)
-        clip_embeddings = text_features
-        del text_features, clip_model
-        self.clip_embeddings = clip_embeddings
 
     def forward(self, x, point2segment=None, raw_coordinates=None, is_eval=False):
         with self.optional_freeze():
-            x = self.model(x, point2segment, raw_coordinates=raw_coordinates,
+            x, queries = self.model(x, point2segment, raw_coordinates=raw_coordinates,
                            is_eval=is_eval)
-        return x
+        return x, queries
 
     def training_step(self, batch, batch_idx):
-        data, target, file_names = batch    # target has labels(num_instances), masks(num_instances, num_points) & segment_masks(num_instances, num_segments)
+        data, target, file_names = batch
 
         if data.features.shape[0] > self.config.general.max_batch_size:
             print("data exceeds threshold")
@@ -134,12 +116,9 @@ class InstanceSegmentation(pl.LightningModule):
                               device=self.device)
 
         try:
-            # point2segment assings a segment to each point. 
-            # Output has pred_logits(B, 100, Classes), pred_masks, aux_outputs, sampled_coords, backbone_feats
-            output = self.forward(data,
+            output, queries = self.forward(data,
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates)
-
         except RuntimeError as run_err:
             print(run_err)
             if 'only a single point gives nans in cross-attention' == run_err.args[0]:
@@ -148,8 +127,7 @@ class InstanceSegmentation(pl.LightningModule):
                 raise run_err
 
         try:
-            # Get queries as well
-            losses = self.criterion(output, target, mask_type=self.mask_type, clip_embeddings=self.clip_embeddings)
+            losses = self.criterion(queries, output, target, mask_type=self.mask_type)
         except ValueError as val_err:
             print(f"ValueError: {val_err}")
             print(f"data shape: {data.shape}")
@@ -369,7 +347,7 @@ class InstanceSegmentation(pl.LightningModule):
 
 
         try:
-            output = self.forward(data,
+            output, queries = self.forward(data,
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates,
                                   is_eval=True)
@@ -385,8 +363,8 @@ class InstanceSegmentation(pl.LightningModule):
                 torch.use_deterministic_algorithms(False)
 
             try:
-                losses = self.criterion(output, target,
-                                        mask_type=self.mask_type, clip_embeddings=self.clip_embeddings)
+                losses = self.criterion(queries, output, target,
+                                        mask_type=self.mask_type)
             except ValueError as val_err:
                 print(f"ValueError: {val_err}")
                 print(f"data shape: {data.shape}")
@@ -869,9 +847,13 @@ class InstanceSegmentation(pl.LightningModule):
         dd['val_mean_loss_ce'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_ce" in k]])
         dd['val_mean_loss_mask'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_mask" in k]])
         dd['val_mean_loss_dice'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_dice" in k]])
-
+        
         self.log_dict(dd)
-
+        
+        with open("/home/mohamed.boudjoghra/projects/ai702/Mask3D/mask3d_feats/scannet20_features.txt", 'w') as f:
+            for s in self.model.config.Features:
+                f.write(str(s) + '\n')
+                
     def configure_optimizers(self):
         optimizer = hydra.utils.instantiate(
             self.config.optimizer, params=self.parameters()
