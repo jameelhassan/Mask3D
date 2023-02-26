@@ -6,11 +6,13 @@ CURR_TOPK=750
 CURR_QUERY=150
 
 # TRAIN
+CUDA_VISIBLE_DEVICES=3 \
 python main_instance_segmentation.py \
-general.experiment_name="CLIP_contrast_init" \
+general.experiment_name="CLIP_loss_BS12" \
 general.project_name="Mask3D_Scannet200" \
 data/datasets=scannet200 \
 general.num_targets=201 \
+data.batch_size=12 \
 data.num_labels=200 \
 general.eval_on_segments=true \
 general.train_on_segments=true

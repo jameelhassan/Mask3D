@@ -67,7 +67,8 @@ class InstanceSegmentation(pl.LightningModule):
         matcher = hydra.utils.instantiate(config.matcher)
         weight_dict = {"loss_ce": matcher.cost_class,
                        "loss_mask": matcher.cost_mask,
-                       "loss_dice": matcher.cost_dice}
+                       "loss_dice": matcher.cost_dice,
+                       "loss_txt": 0.3}
 
         aux_weight_dict = {}
         for i in range(self.model.num_levels * self.model.num_decoders):
