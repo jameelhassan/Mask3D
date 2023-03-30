@@ -16,7 +16,7 @@ from detectron2.projects.point_rend.point_features import (
 )
 
 from models.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
-from pytorch_metric_learning import losses as lss
+# from pytorch_metric_learning import losses as lss
 
 def dice_loss(
         inputs: torch.Tensor,
@@ -144,37 +144,37 @@ class SetCriterion(nn.Module):
         losses = {"loss_ce": loss_ce}
         return losses
     
-    def contrastive_loss(self, queries, targets, indices):
-        """Classification loss (NLL)
-        targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
-        """
-        # assert "pred_logits" in outputs
-        # src_logits = outputs["pred_logits"].float()
+    # def contrastive_loss(self, queries, targets, indices):
+    #     """Classification loss (NLL)
+    #     targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
+    #     """
+    #     # assert "pred_logits" in outputs
+    #     # src_logits = outputs["pred_logits"].float()
 
-        # idx = self._get_src_permutation_idx(indices)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])+
-        # target_classes = torch.full(
-        #     src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
-        # )
-        # target_classes[idx] = target_classes_o
+    #     # idx = self._get_src_permutation_idx(indices)
+    #     # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])+
+    #     # target_classes = torch.full(
+    #     #     src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
+    #     # )
+    #     # target_classes[idx] = target_classes_o
 
-        # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight, ignore_index=253)
-        # losses = {"loss_ce": loss_ce}
-        losses_contr = []
-        for batch_id, (map_id, target_id) in enumerate(indices):
-            queries_b = queries[batch_id][map_id]
-            labels_b = targets[batch_id]['labels'][target_id]
-            queries_normalized = F.normalize(queries_b, p=2, dim=1)
-            logits = torch.div(
-                torch.matmul(
-                    queries_normalized, torch.transpose(queries_normalized, 0, 1)
-                ),
-                self.temperature,
-            )
-            losses_contr.append(lss.NTXentLoss(temperature=self.temperature)(logits, torch.squeeze(labels_b)))
-        return {
-        "cont_loss": torch.sum(torch.stack(losses_contr))
-        }
+    #     # loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight, ignore_index=253)
+    #     # losses = {"loss_ce": loss_ce}
+    #     losses_contr = []
+    #     for batch_id, (map_id, target_id) in enumerate(indices):
+    #         queries_b = queries[batch_id][map_id]
+    #         labels_b = targets[batch_id]['labels'][target_id]
+    #         queries_normalized = F.normalize(queries_b, p=2, dim=1)
+    #         logits = torch.div(
+    #             torch.matmul(
+    #                 queries_normalized, torch.transpose(queries_normalized, 0, 1)
+    #             ),
+    #             self.temperature,
+    #         )
+    #         losses_contr.append(lss.NTXentLoss(temperature=self.temperature)(logits, torch.squeeze(labels_b)))
+    #     return {
+    #     "cont_loss": torch.sum(torch.stack(losses_contr))
+    #     }
 
     def loss_masks(self, outputs, targets, indices, num_masks, mask_type):
         """Compute the losses related to the masks: the focal loss and the dice loss.
