@@ -152,7 +152,7 @@ class SetCriterion(nn.Module):
         # src_logits = outputs["pred_logits"].float()
 
         # idx = self._get_src_permutation_idx(indices)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])+
         # target_classes = torch.full(
         #     src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
         # )
@@ -303,8 +303,6 @@ class SetCriterion(nn.Module):
         losses = {}
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, mask_type))
-        
-        losses.update(self.contrastive_loss(queries, targets, indices))
         
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:

@@ -408,12 +408,12 @@ class Mask3D(nn.Module):
         predictions_class.append(output_class)
         predictions_mask.append(outputs_mask)
         
-        _classes = torch.argmax(torch.functional.F.softmax(
-            predictions_class[-1],
-            dim=-1)[..., :-1],dim=-1)
-        _classes = torch.reshape(_classes, (-1,))[:,None]
-        _queries = torch.reshape(queries,(queries.shape[0]*queries.shape[1],-1))
-        self.config.Features+=torch.hstack((_classes,_queries)).detach().cpu().tolist()     
+        # _classes = torch.argmax(torch.functional.F.softmax(
+        #     predictions_class[-1],
+        #     dim=-1)[..., :-1],dim=-1)
+        # _classes = torch.reshape(_classes, (-1,))[:,None]
+        # _queries = torch.reshape(queries,(queries.shape[0]*queries.shape[1],-1))
+        # self.config.Features+=torch.hstack((_classes,_queries)).detach().cpu().tolist()     
 
         return {
             'pred_logits': predictions_class[-1],
@@ -422,8 +422,9 @@ class Mask3D(nn.Module):
                 predictions_class, predictions_mask
             ),
             'sampled_coords': sampled_coords.detach().cpu().numpy() if sampled_coords is not None else None,
-            'backbone_features': pcd_features
-        }, queries
+            'backbone_features': pcd_features,
+            'refin_queries': queries
+        }
 
     def mask_module(self, query_feat, mask_features, mask_segments, num_pooling_steps, ret_attn_mask=True,
                                  point2segment=None, coords=None):

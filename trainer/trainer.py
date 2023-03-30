@@ -1,3 +1,10 @@
+#tSNE plot
+import sklearn
+from sklearn.manifold import TSNE 
+import seaborn as sb
+import matplotlib.pyplot as plt
+from torch_scatter import scatter_mean
+
 import gc
 from contextlib import nullcontext
 from pathlib import Path
@@ -6,7 +13,6 @@ import shutil
 import os
 import math
 import pyviz3d.visualizer as vis
-from torch_scatter import scatter_mean
 import matplotlib
 from benchmark.evaluate_semantic_instance import evaluate
 from collections import defaultdict
@@ -20,11 +26,17 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from models.metrics import IoU
+
+
+
 import random
 import colorsys
 from typing import List, Tuple
 import functools
+import time
 import json
+import time
+
 
 @functools.lru_cache(20)
 def get_evenly_distributed_colors(count: int) -> List[Tuple[np.uint8, np.uint8, np.uint8]]:
@@ -66,8 +78,7 @@ class InstanceSegmentation(pl.LightningModule):
         matcher = hydra.utils.instantiate(config.matcher)
         weight_dict = {"loss_ce": matcher.cost_class,
                        "loss_mask": matcher.cost_mask,
-                       "loss_dice": matcher.cost_dice,
-                       "cont_loss": config.general.cont_loss}
+                       "loss_dice": matcher.cost_dice}
 
         aux_weight_dict = {}
         for i in range(self.model.num_levels * self.model.num_decoders):
@@ -88,12 +99,13 @@ class InstanceSegmentation(pl.LightningModule):
         self.iou = IoU()
         # misc
         self.labels_info = dict()
+        self.palette = np.array(sb.color_palette("hls", self.config.data.num_labels))
 
     def forward(self, x, point2segment=None, raw_coordinates=None, is_eval=False):
         with self.optional_freeze():
-            x, queries = self.model(x, point2segment, raw_coordinates=raw_coordinates,
+            x= self.model(x, point2segment, raw_coordinates=raw_coordinates,
                            is_eval=is_eval)
-        return x, queries
+        return x
 
     def training_step(self, batch, batch_idx):
         data, target, file_names = batch
@@ -116,7 +128,7 @@ class InstanceSegmentation(pl.LightningModule):
                               device=self.device)
 
         try:
-            output, queries = self.forward(data,
+            output= self.forward(data,
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates)
         except RuntimeError as run_err:
@@ -127,7 +139,7 @@ class InstanceSegmentation(pl.LightningModule):
                 raise run_err
 
         try:
-            losses = self.criterion(queries, output, target, mask_type=self.mask_type)
+            losses = self.criterion(output['refin_queries'], output, target, mask_type=self.mask_type)
         except ValueError as val_err:
             print(f"ValueError: {val_err}")
             print(f"data shape: {data.shape}")
@@ -347,7 +359,7 @@ class InstanceSegmentation(pl.LightningModule):
 
 
         try:
-            output, queries = self.forward(data,
+            output= self.forward(data,
                                   point2segment=[target[i]['point2segment'] for i in range(len(target))],
                                   raw_coordinates=raw_coordinates,
                                   is_eval=True)
@@ -363,8 +375,28 @@ class InstanceSegmentation(pl.LightningModule):
                 torch.use_deterministic_algorithms(False)
 
             try:
-                losses = self.criterion(queries, output, target,
-                                        mask_type=self.mask_type)
+                # losses = self.criterion(output['refin_queries'], output, target,
+                #                         mask_type=self.mask_type)
+                #======================================================================================================================================
+                if self.config.general.save_tSNE:
+                    refin_queries = output['refin_queries']
+                    pred_logits = output['pred_logits']
+                    pred_logits = torch.functional.F.softmax(
+                        pred_logits ,
+                        dim=-1)[..., :-1]
+                    pred_labels = torch.argmax(pred_logits, dim=-1)
+                    id_list = pred_labels.reshape(pred_labels.shape[0]*pred_labels.shape[1], -1)[:, 0].detach().cpu().tolist()
+                    refin_queries_list = refin_queries.reshape(pred_labels.shape[0]*pred_labels.shape[1], -1).detach().cpu().tolist()
+                    
+                    if not os.path.exists(os.path.join(self.config.general.save_quer_feats_in,"quer_features")):
+                        os.makedirs(os.path.join(self.config.general.save_quer_feats_in,"quer_features"))
+                         
+                    file_path = self.config.general.save_quer_feats_in+"quer_features/"+"id_list"+".json"
+                    self.update_file_of_feats(file_path, id_list)
+                         
+                    file_path = self.config.general.save_quer_feats_in+"quer_features/"+"refin_queries_list"+".json"
+                    self.update_file_of_feats(file_path, refin_queries_list)
+                               
             except ValueError as val_err:
                 print(f"ValueError: {val_err}")
                 print(f"data shape: {data.shape}")
@@ -375,12 +407,12 @@ class InstanceSegmentation(pl.LightningModule):
                 print(f"filenames: {file_names}")
                 raise val_err
 
-            for k in list(losses.keys()):
-                if k in self.criterion.weight_dict:
-                    losses[k] *= self.criterion.weight_dict[k]
-                else:
-                    # remove this loss if not specified in `weight_dict`
-                    losses.pop(k)
+            # for k in list(losses.keys()):
+            #     if k in self.criterion.weight_dict:
+            #         losses[k] *= self.criterion.weight_dict[k]
+            #     else:
+            #         # remove this loss if not specified in `weight_dict`
+            #         losses.pop(k)
             if self.config.trainer.deterministic:
                 torch.use_deterministic_algorithms(True)
 
@@ -396,10 +428,11 @@ class InstanceSegmentation(pl.LightningModule):
                                 original_colors, original_normals, raw_coordinates, data_idx,
                                 backbone_features=rescaled_pca if self.config.general.save_visualizations else None)
 
-        if self.config.data.test_mode != "test":
-            return {f"val_{k}": v.detach().cpu().item() for k, v in losses.items()}
-        else:
-            return 0.
+        # if self.config.data.test_mode != "test":
+        #     return {f"val_{k}": v.detach().cpu().item() for k, v in losses.items()}
+        # else:
+        #     return 0.
+        return 0
 
     def test_step(self, batch, batch_idx):
         return self.eval_step(batch, batch_idx)
@@ -766,7 +799,8 @@ class InstanceSegmentation(pl.LightningModule):
                             elif class_name in TAIL_CATS_SCANNET_200:
                                 tail_results.append(np.array((float(ap), float(ap_50), float(ap_25))))
                             else:
-                                assert(False, 'class not known!')
+                                print('class not known')
+                                # assert(False, 'class not known!')
                     else:
                         ap_results[f"{log_prefix}_{class_name}_val_ap"] = float(ap)
                         ap_results[f"{log_prefix}_{class_name}_val_ap_50"] = float(ap_50)
@@ -830,6 +864,64 @@ class InstanceSegmentation(pl.LightningModule):
         self.preds = dict()
         self.bbox_preds = dict()
         self.bbox_gt = dict()
+        
+        if self.config.general.save_tSNE:
+            
+            file_path = self.config.general.save_quer_feats_in+"quer_features/"+"id_list"+".json"
+            with open(file_path, "r") as f:
+                    pred_id = json.load(f)
+                    
+            file_path = self.config.general.save_quer_feats_in+"quer_features/"+"refin_queries_list"+".json"
+            with open(file_path, "r") as f:
+                    quer_features = json.load(f)
+                
+            start = time.time()
+            
+            
+            label_ids = np.array(pred_id)
+            features = np.array(quer_features)
+            label_ids = label_ids.reshape(label_ids.shape[0]*label_ids.shape[1], -1).flatten()
+            features = features.reshape(features.shape[0]*features.shape[1], -1)
+            
+            self.labels = label_ids
+            self.feats_final = TSNE(perplexity=30).fit_transform(features)
+            if not os.path.exists(self.config.general.save_tSNE_in):
+                os.makedirs(self.config.general.save_tSNE_in)
+
+            self.save_plot('tSNE_plot.png')
+            
+            label_ids_ten = torch.tensor(pred_id)
+            features_ten = torch.tensor(quer_features)
+            label_ids_ten = label_ids_ten.reshape(label_ids_ten.shape[0]*label_ids_ten.shape[1], -1)
+            features_ten = features_ten.reshape(features_ten.shape[0]*features_ten.shape[1], -1)
+            mean_per_class = torch.zeros_like(features_ten)
+            
+            _, rev_map = torch.unique(label_ids_ten, return_inverse=True)
+            
+            mean_per_class = scatter_mean(features_ten,label_ids_ten,out=mean_per_class, dim = 0)[rev_map.flatten()]
+            
+            mean_feats_labels = torch.unique(torch.cat([mean_per_class, label_ids_ten], dim = -1), dim = 0)
+            perp = 30 if mean_feats_labels[:,:-1].shape[0] > 30 else mean_feats_labels[:,:-1].shape[0]-1
+            
+            self.labels = mean_feats_labels[:,-1].flatten().detach().cpu().numpy().astype('uint8')
+            
+            self.feats_final = TSNE(perplexity=perp).fit_transform(mean_feats_labels[:,:-1]) 
+            self.save_plot('tSNE_means_plot.png')
+        
+            
+            end = time.time()
+            
+            tm = ["time in minutes", (end-start)/60]
+            
+            file_path = self.config.general.save_quer_feats_in+"plotting_time"+".yml" 
+            with open(file_path, 'w') as fp:
+                    json.dump(tm, fp,  indent=4)
+            
+            for root, dirs, files in os.walk(self.config.general.save_quer_feats_in+"quer_features/", topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
 
     def test_epoch_end(self, outputs):
         if self.config.general.export:
@@ -837,22 +929,22 @@ class InstanceSegmentation(pl.LightningModule):
 
         self.eval_instance_epoch_end()
 
-        dd = defaultdict(list)
-        for output in outputs:
-            for key, val in output.items():  # .items() in Python 3.
-                dd[key].append(val)
+        # dd = defaultdict(list)
+        # for output in outputs:
+        #     for key, val in output.items():  # .items() in Python 3.
+        #         dd[key].append(val)
 
-        dd = {k: statistics.mean(v) for k, v in dd.items()}
+        # dd = {k: statistics.mean(v) for k, v in dd.items()}
 
-        dd['val_mean_loss_ce'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_ce" in k]])
-        dd['val_mean_loss_mask'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_mask" in k]])
-        dd['val_mean_loss_dice'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_dice" in k]])
+        # dd['val_mean_loss_ce'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_ce" in k]])
+        # dd['val_mean_loss_mask'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_mask" in k]])
+        # dd['val_mean_loss_dice'] = statistics.mean([item for item in [v for k,v in dd.items() if "loss_dice" in k]])
         
-        self.log_dict(dd)
+        # self.log_dict(dd)
         
-        with open("/home/mohamed.boudjoghra/projects/ai702/Mask3D/mask3d_feats/scannet20_features.txt", 'w') as f:
-            for s in self.model.config.Features:
-                f.write(str(s) + '\n')
+        # with open("/home/mohamed.boudjoghra/projects/ai702/Mask3D/mask3d_feats/scannet20_features.txt", 'w') as f:
+        #     for s in self.model.config.Features:
+        #         f.write(str(s) + '\n')
                 
     def configure_optimizers(self):
         optimizer = hydra.utils.instantiate(
@@ -900,3 +992,26 @@ class InstanceSegmentation(pl.LightningModule):
             self.test_dataset,
             collate_fn=c_fn,
         )
+    
+    def save_plot(self, file_title):
+        fig = plt.figure(figsize=(8, 8))
+        ax = plt.subplot(aspect='equal')
+        sc = ax.scatter(self.feats_final[:,0], self.feats_final[:,1], lw=0, s=10, c=self.palette[self.labels])
+        plt.savefig(self.config.general.save_tSNE_in+file_title)
+        plt.clf()
+    
+    def update_file_of_feats(self, file_path, data):
+        if not os.path.exists(file_path):        
+            with open(file_path, 'w') as fp:
+                fp.write('[')
+                json.dump(data, fp)
+                fp.write(']')
+        
+        with open(file_path, 'rb+') as fp:
+            fp.seek(-1, os.SEEK_END)
+            fp.truncate()
+            
+        with open(file_path, 'a') as fp:
+                fp.write(',')
+                fp.write(json.dumps(data))
+                fp.write(']')
