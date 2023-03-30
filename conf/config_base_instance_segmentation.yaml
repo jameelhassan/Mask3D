@@ -17,7 +17,7 @@ general:
   ignore_class_threshold: 100
   project_name: AI_project
   workspace: amineboudjoghra
-  experiment_name: 512_scannet
+  experiment_name: 128_scannet
   num_targets: 19
   add_instance: true
   dbscan_eps: 0.95
