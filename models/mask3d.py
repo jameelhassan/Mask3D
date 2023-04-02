@@ -180,7 +180,7 @@ class Mask3D(nn.Module):
 
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
-        self.query2clip = nn.Linear(self.mask_dim, 512)
+        # self.query2clip = nn.Linear(self.mask_dim, 512)
 
 
     def get_pos_encs(self, coords):
@@ -398,12 +398,12 @@ class Mask3D(nn.Module):
         predictions_mask.append(outputs_mask)
 
         # Return projected queries
-        proj_queries = self.query2clip(queries)
+        # proj_queries = self.query2clip(queries)
 
         return {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
-            'proj_queries': proj_queries,
+            'proj_queries': queries,
             'aux_outputs': self._set_aux_loss(
                 predictions_class, predictions_mask
             ),

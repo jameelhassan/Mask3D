@@ -7,7 +7,7 @@ CURR_QUERY=150
 
 # TRAIN
 python main_instance_segmentation.py \
-general.experiment_name="CLIP20_loss_init" \
+general.experiment_name="CLIP_loss_512dim" \
 general.project_name="Mask3D_Scannet" \
 general.eval_on_segments=true \
 general.train_on_segments=true 

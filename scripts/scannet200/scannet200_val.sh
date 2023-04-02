@@ -8,7 +8,7 @@ CURR_QUERY=150
 # TRAIN
 CUDA_VISIBLE_DEVICES=3 \
 python main_instance_segmentation.py \
-general.experiment_name="CLIP_loss_BS12" \
+general.experiment_name="CLIPloss_512dim_BS6" \
 general.project_name="Mask3D_Scannet200" \
 data/datasets=scannet200 \
 general.num_targets=201 \
