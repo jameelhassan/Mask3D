@@ -134,7 +134,7 @@ class SetCriterion(nn.Module):
         src_logits = outputs["pred_logits"].float()
 
         idx = self._get_src_permutation_idx(indices)
-        queries = outputs['proj_queries']
+        queries = outputs['pred_queries']
         queries = queries[idx]
         query_logits = 100 * queries @ clip_embeddings.T
 
@@ -301,9 +301,9 @@ class SetCriterion(nn.Module):
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
                 indices = self.matcher(aux_outputs, targets, mask_type)
                 for loss in self.losses:
-                    # Lazy fix, do we want auxiliary outputs for text loss ??
-                    if loss == 'text':
-                        continue
+                    # # Lazy fix, do we want auxiliary outputs for text loss ??
+                    # if loss == 'text':
+                    #     continue
                     l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, mask_type, clip_embeddings)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)

@@ -4,15 +4,19 @@ export OMP_NUM_THREADS=3  # speeds up MinkowskiEngine
 CURR_DBSCAN=0.95
 CURR_TOPK=750
 CURR_QUERY=150
+BS=$1
+CLIP_LOSS=0.3
+EXP_NAME="CLIPlossTT${CLIP_LOSS}_512dim_BS${BS}"
+PROJ_NAME="Mask3D_Scannet200"
 
 # TRAIN
-CUDA_VISIBLE_DEVICES=3 \
 python main_instance_segmentation.py \
-general.experiment_name="CLIPloss_512dim_BS6" \
-general.project_name="Mask3D_Scannet200" \
+general.experiment_name=${EXP_NAME} \
+general.project_name=${PROJ_NAME} \
 data/datasets=scannet200 \
 general.num_targets=201 \
-data.batch_size=12 \
+data.batch_size=${BS} \
+general.save_dir="saved/${PROJ_NAME}/${EXP_NAME}" \
 data.num_labels=200 \
 general.eval_on_segments=true \
 general.train_on_segments=true

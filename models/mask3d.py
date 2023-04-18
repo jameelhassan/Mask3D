@@ -270,6 +270,7 @@ class Mask3D(nn.Module):
 
         predictions_class = []
         predictions_mask = []
+        prediction_query = []
 
         for decoder_counter in range(self.num_decoders):    # Number of refinement stages??
             if self.shared_decoder:
@@ -377,6 +378,7 @@ class Mask3D(nn.Module):
 
                 predictions_class.append(output_class)
                 predictions_mask.append(outputs_mask)
+                prediction_query.append(queries)
 
         if self.train_on_segments:
             output_class, outputs_mask = self.mask_module(queries,
@@ -396,6 +398,7 @@ class Mask3D(nn.Module):
                                                           coords=coords)
         predictions_class.append(output_class)
         predictions_mask.append(outputs_mask)
+        # prediction_query.append(queries)
 
         # Return projected queries
         # proj_queries = self.query2clip(queries)
@@ -403,10 +406,13 @@ class Mask3D(nn.Module):
         return {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
-            'proj_queries': queries,
+            'pred_queries': queries,
             'aux_outputs': self._set_aux_loss(
-                predictions_class, predictions_mask
+                predictions_class, predictions_mask, prediction_query
             ),
+            # 'aux_outputs': self._set_aux_loss(
+            #     predictions_class, predictions_mask, prediction_query
+            # ),
             'sampled_coords': sampled_coords.detach().cpu().numpy() if sampled_coords is not None else None,
             'backbone_features': pcd_features
         }
@@ -453,13 +459,13 @@ class Mask3D(nn.Module):
             return outputs_class, outputs_mask.decomposed_features
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_seg_masks):
+    def _set_aux_loss(self, outputs_class, outputs_seg_masks, outputs_query):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         return [
-            {"pred_logits": a, "pred_masks": b}
-            for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])
+            {"pred_logits": a, "pred_masks": b, "pred_queries": c}
+            for a, b, c in zip(outputs_class[:-1], outputs_seg_masks[:-1], outputs_query)
         ]
 
 
