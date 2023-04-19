@@ -9,8 +9,7 @@
 #SBATCH -p gpu                      # Use the gpu partition
 #SBATCH --time=12:00:00             # Specify the time needed for your experiment
 #SBATCH --qos=gpu-8                 # To enable the use of up to 8 GPUs
-#SBATCH --exclude=gpu-07
 
 source ~/.bashrc
 conda activate mask3d
-sh scripts/scannet200/scannet200_val.sh 8
+sh scripts/scannet200/scannet200_val.sh 6

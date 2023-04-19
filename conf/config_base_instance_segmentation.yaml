@@ -16,7 +16,7 @@ general:
   use_dbscan: false
   ignore_class_threshold: 100
   project_name: Mask3D_Scannet20
-  workspace: amine-jh
+  workspace: jameelhassan
   experiment_name: CLIP
   num_targets: 19
   add_instance: true
