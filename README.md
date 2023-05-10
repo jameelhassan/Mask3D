@@ -1,4 +1,66 @@
-## Mask3D: Mask Transformer for 3D Instance Segmentation
+### Dependencies :memo:
+The main dependencies of the project are the following:
+```yaml
+python: 3.10.6
+cuda: 11.6
+```
+You can set up a conda environment as follows
+```
+conda create --name=mask3d python=3.10.6
+conda activate mask3d
+
+conda update -n base -c defaults conda
+conda install openblas-devel -c anaconda
+
+pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cu116
+pip install torch-scatter -f https://data.pyg.org/whl/torch-1.12.1+cu116.html
+
+pip install ninja==1.10.2.3
+pip install pytorch-lightning fire imageio tqdm wandb python-dotenv pyviz3d scipy plyfile scikit-learn trimesh loguru albumentations volumentations
+
+pip install antlr4-python3-runtime==4.8
+pip install black==21.4b2
+pip install omegaconf==2.0.6 hydra-core==1.0.5 --no-deps
+pip install 'git+https://github.com/facebookresearch/detectron2.git@710e7795d0eeadf9def0e7ef957eea13532e34cf' --no-deps
+
+cd third_party/pointnet2 && python setup.py install
+git clone https://github.com/NVIDIA/MinkowskiEngine.git
+cd MinkowskiEngine
+python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas=openblas
+
+```
+
+### Data preparation: create a symbolic link from the dataset directory
+```
+cd Mask3D
+ln -s /l/users/mohamed.boudjoghra/Research/Mask3D/data ./
+```
+
+### Train the model with clip loss
+```
+sh scripts/train_with_clip.sh
+```
+
+### Train the model without clip loss
+```
+sh scripts/train_without_clip.sh
+```
+
+### Pretrained weights with clip supervision
+```
+checkpoint: https://drive.google.com/file/d/1fJovEXJySzKtaz-xcJEA6cfsSCIBH9aO/view?usp=sharing
+```
+
+### Evaluation
+```
+cd Mask3D
+python main_instance_segmentation.py \
+general.train_mode=false \
+general.checkpoint=<path to the checkpoint>
+```
+
+
+<!-- ## Mask3D: Mask Transformer for 3D Instance Segmentation
 <div align="center">
 <a href="https://jonasschult.github.io/">Jonas Schult</a><sup>1</sup>, <a href="https://francisengelmann.github.io/">Francis Engelmann</a><sup>2,3</sup>, <a href="https://www.vision.rwth-aachen.de/person/10/">Alexander Hermans</a><sup>1</sup>, <a href="https://orlitany.github.io/">Or Litany</a><sup>4</sup>, <a href="https://inf.ethz.ch/people/person-detail.MjYyNzgw.TGlzdC8zMDQsLTg3NDc3NjI0MQ==.html">Siyu Tang</a><sup>3</sup>,  <a href="https://www.vision.rwth-aachen.de/person/1/">Bastian Leibe</a><sup>1</sup>
 
@@ -184,4 +246,4 @@ Following PointGroup, HAIS and SoftGroup, we finetune a model pretrained on Scan
   booktitle = {{International Conference on Robotics and Automation (ICRA)}},
   year      = {2023}
 }
-```
+``` -->
