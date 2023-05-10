@@ -30,20 +30,16 @@ python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas=openb
 
 ```
 
-### Data preparation: create a symbolic link from the dataset directory
+### Data preparation: create a symbolic link from the dataset directory and to the saved checkpoints in CSCC
 ```
 cd Mask3D
-ln -s /l/users/mohamed.boudjoghra/Research/Mask3D/data ./
+ln -s /l/users/jameel.hassan/data/scannet/ ./data
+ln -s /l/users/jameel.hassan/Mask3D/saved/ ./saved
 ```
 
 ### Train the model with clip loss
 ```
-sh scripts/train_with_clip.sh
-```
-
-### Train the model without clip loss
-```
-sh scripts/train_without_clip.sh
+sh scripts/scannet200/scannet200_val.sh 6
 ```
 
 ### Pretrained weights with clip supervision
